@@ -41,11 +41,32 @@ def preflight(repo):
         role = run("gh", "repo", "view", f"github.com/{repo}", "--json", "viewerPermission",
                    "--jq", ".viewerPermission")
         existing = run("gh", "api", "--hostname", "github.com", "--paginate",
-                       f"repos/{repo}/labels", "--jq", ".[].name")
+                       f"repos/{repo}/labels", "--jq", '.[] | [.name,.color] | @tsv' )
     except subprocess.CalledProcessError as error:
         raise ValueError(f"Cannot read repository metadata or labels for {repo}. Check token access.") from error
     print(f"Repository role: {role} | Label listing succeeded.")
-    return role, set(existing.splitlines())
+    return role, dict(line.split("\t", 1) for line in existing.splitlines())
+
+
+def label_plan(existing):
+    palette = json.loads((HERE / "label-colors.json").read_text())
+    current = {name.casefold(): (name, color.upper()) for name, color in existing.items()}
+    changes = []
+    for name, color in palette.items():
+        if name not in current:
+            changes.append(("create", name, color))
+        elif current[name][1] != color:
+            changes.append(("edit", current[name][0], color))
+    return changes
+
+
+def sync_labels(repo, changes, preview):
+    for action, name, color in changes:
+        print(f"Label {action}: {name} #{color}", flush=True)
+        if not preview:
+            run("gh", "label", action, name, "--repo", f"github.com/{repo}", "--color", color)
+    if not changes:
+        print("Label colors are up to date.")
 
 
 def init(args):
@@ -61,16 +82,15 @@ def init(args):
     files["CONTRIBUTING.md"] = (f"Start a feature, bug or remediation branch from {dev}. Open a PR into {dev} "
                                 "with the matching work label, release:snapshot and one version label. "
                                 f"Release through a PR from {dev} into {main} with release:production.\n")
-    labels = [*profile["work"].values(), *profile["release"].values(),
-              *("version:" + v for v in profile["versions"])]
     role, existing = preflight(repo)
     remote = run("git", "ls-remote", "--heads", "origin", "refs/heads/" + dev, "refs/heads/" + main)
     refs = {ref: sha for sha, ref in (line.split() for line in remote.splitlines())}
     devref = "refs/heads/" + dev
     base = refs.get(devref) or refs["refs/heads/" + main]
-    pending_labels = [label for label in labels if label.casefold() not in {name.casefold() for name in existing}]
+    changes = label_plan(existing)
     print(f"Integration branch: {dev} ({'exists' if devref in refs else 'create'})")
-    print("Labels to create:", ", ".join(pending_labels) or "none")
+    if args.dry_run:
+        sync_labels(repo, changes, True)
     run("git", "fetch", "--quiet", "origin", base)
     missing = []
     for path, content in files.items():
@@ -87,13 +107,7 @@ def init(args):
     if devref not in refs:
         run("git", "push", "origin", base + ":" + devref)
         print(f"Created remote branch {dev}.", flush=True)
-    for label in pending_labels:
-        try:
-            run("gh", "label", "create", label, "--repo", f"github.com/{repo}", "--color", "4169E1")
-        except subprocess.CalledProcessError as error:
-            raise ValueError(f"Could not create label {label!r}. Check label-write access and rerun init; "
-                             "existing labels and the integration branch will be reused.") from error
-        print(f"Created label {label}.", flush=True)
+    sync_labels(repo, changes, False)
     if missing:
         run("git", "switch", "-c", "feature/sdlc-bootstrap", base)
         for path in missing:
@@ -109,6 +123,13 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     install = sub.add_parser("init")
     install.add_argument("--dry-run", action="store_true")
+    labels = sub.add_parser("labels")
+    labels.add_argument("--dry-run", action="store_true")
+    rules = sub.add_parser("ruleset", help="Print an importable branch ruleset JSON")
+    rules.add_argument("branch", choices=["dev", "main"])
+    pom = sub.add_parser("check-pom-version")
+    pom.add_argument("before")
+    pom.add_argument("after")
     start = sub.add_parser("start")
     start.add_argument("kind")
     start.add_argument("title")
@@ -117,6 +138,19 @@ def main():
     pr = sub.add_parser("pr")
     pr.add_argument("--version", required=True)
     args = parser.parse_args()
+    if args.action == "check-pom-version":
+        from pom_version import verify
+        verify(args.before, args.after)
+        return
+    if args.action == "ruleset":
+        from ruleset import branch_ruleset
+        print(json.dumps(branch_ruleset(args.branch), indent=2))
+        return
+    if args.action == "labels":
+        repo = repository()
+        _, existing = preflight(repo)
+        sync_labels(repo, label_plan(existing), args.dry_run)
+        return
     if args.action == "init":
         return init(args)
     root = Path(run("git", "rev-parse", "--show-toplevel"))
