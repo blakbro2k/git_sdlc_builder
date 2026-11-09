@@ -101,3 +101,17 @@ Keep both config files in version control. Run:
 
 The last command reports undefined references and checks that the referenced
 labels actually exist on the target repository.
+
+## Optional label descriptions
+
+Inside the profile's `labels` map, a color string still works. To manage the
+description too, use an object, for example:
+
+```json
+"frontend": {"color": "081A71", "description": "Changes to the user interface."}
+```
+
+Omitting description preserves existing wording. An empty description explicitly
+clears it. A description-only object preserves the existing color (new labels
+default to neutral grey). Preview with `sdlc labels --dry-run` and apply with
+`sdlc labels`; bootstrap uses the same logic.
