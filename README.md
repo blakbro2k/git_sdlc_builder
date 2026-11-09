@@ -24,3 +24,8 @@ After bootstrap, from the target checkout:
 ```
 
 Replace 1 with a real issue number, or omit --issue. start also accepts bug and remediate. Use --push to publish the branch immediately. The generated policy checks work labels for integration and release/version labels for integration and production. Required-check enforcement can be configured separately in GitHub repository settings. Production PRs from dev to main are opened manually.
+
+The init preview checks the active github.com login, repository role, and label listing.
+It prints which branch, labels, and files would be created. Apply uses the same checks.
+The preview cannot prove that Git push or a label write will succeed. If a label write
+fails, fix the credential access and rerun init to reuse completed remote changes.

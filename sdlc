@@ -3,6 +3,7 @@
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +29,25 @@ def clean():
         raise ValueError("Commit or stash local changes before starting a branch.")
 
 
+def preflight(repo):
+    if not shutil.which("gh"):
+        raise ValueError("Install GitHub CLI (gh) before running init.")
+    try:
+        login = run("gh", "api", "--hostname", "github.com", "user", "--jq", ".login")
+    except subprocess.CalledProcessError as error:
+        raise ValueError("Cannot identify the active github.com account. Check gh auth status.") from error
+    print(f"GitHub account: {login} | Repository: {repo}", flush=True)
+    try:
+        role = run("gh", "repo", "view", f"github.com/{repo}", "--json", "viewerPermission",
+                   "--jq", ".viewerPermission")
+        existing = run("gh", "api", "--hostname", "github.com", "--paginate",
+                       f"repos/{repo}/labels", "--jq", ".[].name")
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"Cannot read repository metadata or labels for {repo}. Check token access.") from error
+    print(f"Repository role: {role} | Label listing succeeded.")
+    return role, set(existing.splitlines())
+
+
 def init(args):
     repo = repository()
     root = Path(run("git", "rev-parse", "--show-toplevel"))
@@ -43,11 +63,14 @@ def init(args):
                                 f"Release through a PR from {dev} into {main} with release:production.\n")
     labels = [*profile["work"].values(), *profile["release"].values(),
               *("version:" + v for v in profile["versions"])]
+    role, existing = preflight(repo)
     remote = run("git", "ls-remote", "--heads", "origin", "refs/heads/" + dev, "refs/heads/" + main)
     refs = {ref: sha for sha, ref in (line.split() for line in remote.splitlines())}
     devref = "refs/heads/" + dev
     base = refs.get(devref) or refs["refs/heads/" + main]
-    print(f"Target {repo}, integration branch {dev}, labels: {', '.join(labels)}")
+    pending_labels = [label for label in labels if label.casefold() not in {name.casefold() for name in existing}]
+    print(f"Integration branch: {dev} ({'exists' if devref in refs else 'create'})")
+    print("Labels to create:", ", ".join(pending_labels) or "none")
     run("git", "fetch", "--quiet", "origin", base)
     missing = []
     for path, content in files.items():
@@ -58,13 +81,19 @@ def init(args):
     print("Files to add:", ", ".join(missing) or "none")
     if args.dry_run:
         return
+    if role not in {"WRITE", "MAINTAIN", "ADMIN"}:
+        raise ValueError(f"Applying init requires write access to {repo}; current role: {role}.")
     clean()
     if devref not in refs:
         run("git", "push", "origin", base + ":" + devref)
-    existing = set(run("gh", "api", "--paginate", "repos/" + repo + "/labels", "--jq", ".[].name").splitlines())
-    for label in labels:
-        if label not in existing:
-            run("gh", "label", "create", label, "--repo", repo, "--color", "4169E1")
+        print(f"Created remote branch {dev}.", flush=True)
+    for label in pending_labels:
+        try:
+            run("gh", "label", "create", label, "--repo", f"github.com/{repo}", "--color", "4169E1")
+        except subprocess.CalledProcessError as error:
+            raise ValueError(f"Could not create label {label!r}. Check label-write access and rerun init; "
+                             "existing labels and the integration branch will be reused.") from error
+        print(f"Created label {label}.", flush=True)
     if missing:
         run("git", "switch", "-c", "feature/sdlc-bootstrap", base)
         for path in missing:
