@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 HERE = Path(__file__).resolve().parent
 CONFIG = ".github/sdlc.json"
@@ -41,11 +42,11 @@ def preflight(repo):
         role = run("gh", "repo", "view", f"github.com/{repo}", "--json", "viewerPermission",
                    "--jq", ".viewerPermission")
         existing = run("gh", "api", "--hostname", "github.com", "--paginate",
-                       f"repos/{repo}/labels", "--jq", '.[] | [.name,.color] | @tsv' )
+                       f"repos/{repo}/labels", "--jq", '.[] | {name,color,description} | @json')
     except subprocess.CalledProcessError as error:
         raise ValueError(f"Cannot read repository metadata or labels for {repo}. Check token access.") from error
     print(f"Repository role: {role} | Label listing succeeded.")
-    return role, dict(line.split("\t", 1) for line in existing.splitlines())
+    return role, {item["name"]: item for item in map(json.loads, existing.splitlines())}
 
 
 def read_profile(path):
@@ -62,33 +63,57 @@ def read_profile(path):
     profile["labels"] = palette
     if not isinstance(palette, dict) or not set(names) <= set(palette):
         raise ValueError("labels must define every work, release and version label; extra labels are allowed.")
-    if any(not isinstance(color, str) or (color and not re.fullmatch(r"[0-9a-fA-F]{6}", color))
-           for color in palette.values()):
-        raise ValueError("Use six hexadecimal digits without # for each label color.")
+    for name, value in palette.items():
+        fields = {"color": value} if isinstance(value, str) else value
+        if not isinstance(fields, dict) or fields.keys() - {"color", "description"}:
+            raise ValueError(f"Invalid label settings for {name}.")
+        color = fields.get("color", "")
+        if not isinstance(color, str) or (color and not re.fullmatch(r"[0-9a-fA-F]{6}", color)):
+            raise ValueError(f"Invalid color for {name}: use six hexadecimal digits.")
+        if "description" in fields:
+            desc = fields["description"]
+            if not isinstance(desc, str) or len(desc) > 100:
+                raise ValueError(f"Description for {name} must be a string of at most 100 characters.")
+        palette[name] = fields
     return profile
 
 
 def label_plan(existing, profile):
-    palette = profile["labels"]
-    current = {name.casefold(): (name, color.upper()) for name, color in existing.items()}
+    current = {key.casefold(): item for key, item in existing.items()}
     changes = []
-    for name, color in palette.items():
-        key = name.casefold()
-        color = color.upper()
-        if key not in current:
-            changes.append(("create", name, color or "808080"))
-        elif color and current[key][1] != color:
-            changes.append(("edit", current[key][0], color))
+    for name, settings in profile["labels"].items():
+        old = current.get(name.casefold())
+        fields = {}
+        color = settings.get("color", "").upper()
+        if old is None:
+            fields["color"] = color or "808080"
+        elif color and color != old["color"].upper():
+            fields["color"] = color
+        if "description" in settings and settings["description"] != ((old or {}).get("description") or ""):
+            fields["description"] = settings["description"]
+        if fields:
+            changes.append(("edit" if old else "create", old["name"] if old else name, fields))
     return changes
 
 
 def sync_labels(repo, changes, preview):
-    for action, name, color in changes:
-        print(f"Label {action}: {name} #{color}", flush=True)
-        if not preview:
-            run("gh", "label", action, name, "--repo", f"github.com/{repo}", "--color", color)
+    for action, name, fields in changes:
+        print(f"Label {action}: {name} {json.dumps(fields, ensure_ascii=False)}", flush=True)
+        if preview:
+            continue
+        endpoint = f"repos/{repo}/labels"
+        if action == "edit":
+            endpoint += "/" + quote(name, safe="")
+            method = "PATCH"
+        else:
+            method = "POST"
+            fields = {"name": name, **fields}
+        args = ["gh", "api", "--hostname", "github.com", "--method", method, endpoint]
+        for key, value in fields.items():
+            args.extend(["-f", f"{key}={value}"])
+        run(*args)
     if not changes:
-        print("Label colors are up to date.")
+        print("Labels are up to date.")
 
 
 def workflow_references(path, profile):
