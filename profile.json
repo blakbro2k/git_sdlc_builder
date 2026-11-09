@@ -1,0 +1,7 @@
+{
+  "integration": "dev",
+  "production": "main",
+  "work": {"feature": "feature", "bug": "bug", "remediate": "remediate"},
+  "release": {"integration": "release:snapshot", "production": "release:production"},
+  "versions": ["major", "minor", "patch"]
+}
