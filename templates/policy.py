@@ -20,7 +20,7 @@ def errors(profile, head, base, labels):
             problems.append(f"Apply exactly the matching work label: {expected}.")
     else:
         problems.append(f"Unsupported target branch: {base}.")
-    if {v for v in labels if v.startswith("release:")} != {release}:
+    if {v for v in labels if v.startswith("release:") or v in profile["release"].values()} != {release}:
         problems.append(f"Apply exactly this release label: {release}.")
     versions = {v for v in labels if v.startswith("version:")}
     if len(versions) != 1 or not versions <= {"version:" + v for v in profile["versions"]}:

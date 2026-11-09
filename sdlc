@@ -48,15 +48,35 @@ def preflight(repo):
     return role, dict(line.split("\t", 1) for line in existing.splitlines())
 
 
-def label_plan(existing):
-    palette = json.loads((HERE / "label-colors.json").read_text())
+def read_profile(path):
+    profile = json.loads(path.read_text())
+    names = [*profile["work"].values(), *profile["release"].values(),
+             *("version:" + v for v in profile["versions"])]
+    palette = profile.get("label_colors")
+    if palette is None:
+        # Profiles generated before colors were introduced.
+        defaults = json.loads((HERE / "profile.json").read_text())["label_colors"]
+        palette = {name: defaults.get(name, "808080") for name in names}
+        profile["label_colors"] = palette
+    if not isinstance(palette, dict) or set(palette) != set(names):
+        raise ValueError("label_colors must contain exactly the configured work, release and version labels.")
+    if any(not isinstance(color, str) or not re.fullmatch(r"[0-9a-fA-F]{6}", color)
+           for color in palette.values()):
+        raise ValueError("Use six hexadecimal digits without # for each label color.")
+    return profile
+
+
+def label_plan(existing, profile):
+    palette = profile["label_colors"]
     current = {name.casefold(): (name, color.upper()) for name, color in existing.items()}
     changes = []
     for name, color in palette.items():
-        if name not in current:
+        key = name.casefold()
+        color = color.upper()
+        if key not in current:
             changes.append(("create", name, color))
-        elif current[name][1] != color:
-            changes.append(("edit", current[name][0], color))
+        elif current[key][1] != color:
+            changes.append(("edit", current[key][0], color))
     return changes
 
 
@@ -72,22 +92,24 @@ def sync_labels(repo, changes, preview):
 def init(args):
     repo = repository()
     root = Path(run("git", "rev-parse", "--show-toplevel"))
-    files = {CONFIG: (HERE / "profile.json").read_text()}
-    profile = json.loads(files[CONFIG])
+    source = args.profile or (root / CONFIG if (root / CONFIG).exists() else HERE / "profile.json")
+    profile = read_profile(source)
+    files = {CONFIG: source.read_text()}
+    print(f"Profile: {source}")
     dev, main = profile["integration"], profile["production"]
     for source, target in [("policy.yml", ".github/workflows/sdlc-policy.yml"),
                            ("policy.py", ".github/scripts/sdlc_policy.py"),
                            ("pull_request_template.md", ".github/pull_request_template.md")]:
         files[target] = (HERE / "templates" / source).read_text()
     files["CONTRIBUTING.md"] = (f"Start a feature, bug or remediation branch from {dev}. Open a PR into {dev} "
-                                "with the matching work label, release:snapshot and one version label. "
-                                f"Release through a PR from {dev} into {main} with release:production.\n")
+                                f"with the matching work label, {profile['release']['integration']} and one version label. "
+                                f"Release through a PR from {dev} into {main} with {profile['release']['production']}.\n")
     role, existing = preflight(repo)
     remote = run("git", "ls-remote", "--heads", "origin", "refs/heads/" + dev, "refs/heads/" + main)
     refs = {ref: sha for sha, ref in (line.split() for line in remote.splitlines())}
     devref = "refs/heads/" + dev
     base = refs.get(devref) or refs["refs/heads/" + main]
-    changes = label_plan(existing)
+    changes = label_plan(existing, profile)
     print(f"Integration branch: {dev} ({'exists' if devref in refs else 'create'})")
     if args.dry_run:
         sync_labels(repo, changes, True)
@@ -109,7 +131,7 @@ def init(args):
         print(f"Created remote branch {dev}.", flush=True)
     sync_labels(repo, changes, False)
     if missing:
-        run("git", "switch", "-c", "feature/sdlc-bootstrap", base)
+        run("git", "switch", "-c", next(iter(profile["work"])) + "/sdlc-bootstrap", base)
         for path in missing:
             destination = root / path
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -122,8 +144,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
     install = sub.add_parser("init")
+    install.add_argument("--profile", type=Path, help="Use a customized JSON profile for bootstrap")
     install.add_argument("--dry-run", action="store_true")
     labels = sub.add_parser("labels")
+    labels.add_argument("--profile", type=Path, help="Override the installed repository profile")
     labels.add_argument("--dry-run", action="store_true")
     rules = sub.add_parser("ruleset", help="Print an importable branch ruleset JSON")
     rules.add_argument("branch", choices=["dev", "main"])
@@ -149,7 +173,10 @@ def main():
     if args.action == "labels":
         repo = repository()
         _, existing = preflight(repo)
-        sync_labels(repo, label_plan(existing), args.dry_run)
+        installed = Path(run("git", "rev-parse", "--show-toplevel")) / CONFIG
+        source = args.profile or (installed if installed.exists() else HERE / "profile.json")
+        print(f"Profile: {source}")
+        sync_labels(repo, label_plan(existing, read_profile(source)), args.dry_run)
         return
     if args.action == "init":
         return init(args)

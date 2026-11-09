@@ -2,6 +2,23 @@
 
 Install a GitHub SDLC workflow in an existing repository. Requires Python 3, Git, and an authenticated GitHub CLI with permission to push branches and manage labels in the target.
 
+## Customize labels before bootstrap
+
+The builder's `profile.json` defines work label names, release label names, version suffixes and their colors in `label_colors`. Edit a copy before running init. For example, change `"feature": "ADD8E6"` inside `label_colors` to `"feature": "87CEEB"` for sky blue. To rename a label, change both its policy mapping and its key in `label_colors`. Use six hex digits without a leading #.
+
+From the target checkout:
+
+```sh
+cp ../git_sdlc_builder/profile.json ../rocketfly-profile.json
+# Edit ../rocketfly-profile.json, then preview and apply that same file.
+../git_sdlc_builder/sdlc init --profile ../rocketfly-profile.json --dry-run
+../git_sdlc_builder/sdlc init --profile ../rocketfly-profile.json
+```
+
+Bootstrap copies your profile into the target as `.github/sdlc.json`. Later, edit that file and run `sdlc labels --dry-run` followed by `sdlc labels`. Older profiles without a palette use the default colors. Label name changes create the newly named label; existing issue assignments remain on the previous name.
+
+## Use the defaults
+
 Clone this builder next to the target checkout. From RocketFlyIII, run:
 
 ```sh
@@ -32,7 +49,7 @@ fails, fix the credential access and rerun init to reuse completed remote change
 
 ## Label palette and branch rules
 
-Init creates or updates the eight SDLC labels from label-colors.json. For an existing
+Init creates or updates the eight SDLC labels from the selected profile. For an existing
 bootstrap, run `sdlc labels --dry-run`, then `sdlc labels`. Existing labels keep their
 issue/PR assignments and descriptions.
 
