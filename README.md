@@ -1,4 +1,4 @@
-# git_sdlc_builder
+# Git SDLC Builder Utility
 
 Install a GitHub SDLC workflow in an existing repository. Requires Python 3, Git, and an authenticated GitHub CLI with permission to push branches and manage labels in the target.
 
