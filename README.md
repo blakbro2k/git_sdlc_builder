@@ -4,7 +4,7 @@ Install a GitHub SDLC workflow in an existing repository. Requires Python 3, Git
 
 ## Customize labels before bootstrap
 
-The builder's `profile.json` defines work label names, release label names, version suffixes and their colors in `label_colors`. Edit a copy before running init. For example, change `"feature": "ADD8E6"` inside `label_colors` to `"feature": "87CEEB"` for sky blue. To rename a label, change both its policy mapping and its key in `label_colors`. Use six hex digits without a leading #.
+The builder's `profile.json` defines work label names, release label names, version suffixes and their colors in `labels`. Edit a copy before running init. For example, change `"feature": "ADD8E6"` inside `labels` to `"feature": "87CEEB"` for sky blue. To rename a label, change both its policy mapping and its key in `labels`. Use six hex digits without a leading #.
 
 From the target checkout:
 
@@ -73,3 +73,31 @@ Run `sdlc check-pom-version BEFORE AFTER` in the target repository to verify tha
 the only changed file is the root pom.xml and only the literal project/version value
 changed. Use it on the version-bump commit in the eventual release workflow. It is
 a standalone check until that workflow invokes it.
+
+## Area labels and future workflows
+
+Edit `labels` in the profile to define any GitHub label once. The keys under
+`work` are branch prefixes and their values refer to work labels. Similarly,
+`release` selects a label for each promotion path. An area like frontend or
+backend belongs only in `labels`; it can coexist with feature, bug or remediate.
+A six-digit color sets the color; an empty string preserves an existing color
+or uses neutral grey for a new label. Legacy label_colors profiles still work.
+
+The optional sibling `workflow-labels.json` separately maps planned workflow
+names to lists of labels, for example `{"frontend-ci":["frontend"]}`.
+Init validates the references and copies this file into .github. These records
+declare dependencies for future workflows; they do not run CI. With a custom
+profile, place the file beside it or pass `--workflow-labels PATH`.
+
+On an existing target checkout, edit .github/sdlc.json (rename label_colors
+to labels if present), add frontend and backend, then add .github/workflow-labels.json.
+Keep both config files in version control. Run:
+
+```sh
+../git_sdlc_builder/sdlc labels --dry-run
+../git_sdlc_builder/sdlc labels
+../git_sdlc_builder/sdlc check-workflow-labels
+```
+
+The last command reports undefined references and checks that the referenced
+labels actually exist on the target repository.

@@ -52,30 +52,32 @@ def read_profile(path):
     profile = json.loads(path.read_text())
     names = [*profile["work"].values(), *profile["release"].values(),
              *("version:" + v for v in profile["versions"])]
-    palette = profile.get("label_colors")
+    if "labels" in profile and "label_colors" in profile:
+        raise ValueError("Use labels or legacy label_colors, not both.")
+    palette = profile.get("labels", profile.get("label_colors"))
     if palette is None:
         # Profiles generated before colors were introduced.
-        defaults = json.loads((HERE / "profile.json").read_text())["label_colors"]
+        defaults = json.loads((HERE / "profile.json").read_text())["labels"]
         palette = {name: defaults.get(name, "808080") for name in names}
-        profile["label_colors"] = palette
-    if not isinstance(palette, dict) or set(palette) != set(names):
-        raise ValueError("label_colors must contain exactly the configured work, release and version labels.")
-    if any(not isinstance(color, str) or not re.fullmatch(r"[0-9a-fA-F]{6}", color)
+    profile["labels"] = palette
+    if not isinstance(palette, dict) or not set(names) <= set(palette):
+        raise ValueError("labels must define every work, release and version label; extra labels are allowed.")
+    if any(not isinstance(color, str) or (color and not re.fullmatch(r"[0-9a-fA-F]{6}", color))
            for color in palette.values()):
         raise ValueError("Use six hexadecimal digits without # for each label color.")
     return profile
 
 
 def label_plan(existing, profile):
-    palette = profile["label_colors"]
+    palette = profile["labels"]
     current = {name.casefold(): (name, color.upper()) for name, color in existing.items()}
     changes = []
     for name, color in palette.items():
         key = name.casefold()
         color = color.upper()
         if key not in current:
-            changes.append(("create", name, color))
-        elif current[key][1] != color:
+            changes.append(("create", name, color or "808080"))
+        elif color and current[key][1] != color:
             changes.append(("edit", current[key][0], color))
     return changes
 
@@ -89,12 +91,33 @@ def sync_labels(repo, changes, preview):
         print("Label colors are up to date.")
 
 
+def workflow_references(path, profile):
+    workflows = json.loads(path.read_text())
+    if not isinstance(workflows, dict):
+        raise ValueError("Expected a workflow name to labels mapping.")
+    for workflow, refs in workflows.items():
+        if not isinstance(refs, list) or not all(isinstance(ref, str) for ref in refs):
+            raise ValueError(f"{workflow}: expected a list of label names.")
+        missing = sorted(set(refs) - profile["labels"].keys())
+        if missing:
+            raise ValueError(f"{workflow}: undefined profile labels: {', '.join(missing)}")
+    return workflows
+
+
 def init(args):
     repo = repository()
     root = Path(run("git", "rev-parse", "--show-toplevel"))
     source = args.profile or (root / CONFIG if (root / CONFIG).exists() else HERE / "profile.json")
     profile = read_profile(source)
     files = {CONFIG: source.read_text()}
+    workflow_source = args.workflow_labels
+    if workflow_source is None:
+        adjacent = source.with_name("workflow-labels.json")
+        if adjacent.is_file():
+            workflow_source = adjacent
+    if workflow_source is not None:
+        workflow_references(workflow_source, profile)
+        files[".github/workflow-labels.json"] = workflow_source.read_text()
     print(f"Profile: {source}")
     dev, main = profile["integration"], profile["production"]
     for source, target in [("policy.yml", ".github/workflows/sdlc-policy.yml"),
@@ -145,10 +168,14 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     install = sub.add_parser("init")
     install.add_argument("--profile", type=Path, help="Use a customized JSON profile for bootstrap")
+    install.add_argument("--workflow-labels", type=Path, help="Workflow-to-label reference JSON")
     install.add_argument("--dry-run", action="store_true")
     labels = sub.add_parser("labels")
     labels.add_argument("--profile", type=Path, help="Override the installed repository profile")
     labels.add_argument("--dry-run", action="store_true")
+    check = sub.add_parser("check-workflow-labels", help="Check declared labels locally and on GitHub")
+    check.add_argument("--profile", type=Path)
+    check.add_argument("--workflow-labels", type=Path)
     rules = sub.add_parser("ruleset", help="Print an importable branch ruleset JSON")
     rules.add_argument("branch", choices=["dev", "main"])
     pom = sub.add_parser("check-pom-version")
@@ -169,6 +196,18 @@ def main():
     if args.action == "ruleset":
         from ruleset import branch_ruleset
         print(json.dumps(branch_ruleset(args.branch), indent=2))
+        return
+    if args.action == "check-workflow-labels":
+        root = Path(run("git", "rev-parse", "--show-toplevel"))
+        source = args.profile or root / CONFIG
+        path = args.workflow_labels or source.with_name("workflow-labels.json")
+        workflows = workflow_references(path, read_profile(source))
+        _, existing = preflight(repository())
+        present = {name.casefold() for name in existing}
+        missing = {label for refs in workflows.values() for label in refs if label.casefold() not in present}
+        if missing:
+            raise ValueError("Missing GitHub labels: " + ", ".join(sorted(missing)) + ". Run sdlc labels.")
+        print(f"Verified label references for {len(workflows)} workflow(s).")
         return
     if args.action == "labels":
         repo = repository()

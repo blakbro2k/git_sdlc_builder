@@ -15,7 +15,7 @@
     "minor",
     "patch"
   ],
-  "label_colors": {
+  "labels": {
     "feature": "ADD8E6",
     "bug": "D73A4A",
     "remediate": "FF8C00",
@@ -23,6 +23,8 @@
     "release:production": "228B22",
     "version:patch": "808080",
     "version:minor": "D2B48C",
-    "version:major": "FF00FF"
+    "version:major": "FF00FF",
+    "frontend": "",
+    "backend": ""
   }
 }
