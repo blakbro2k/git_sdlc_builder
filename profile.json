@@ -1,7 +1,28 @@
 {
   "integration": "dev",
   "production": "main",
-  "work": {"feature": "feature", "bug": "bug", "remediate": "remediate"},
-  "release": {"integration": "release:snapshot", "production": "release:production"},
-  "versions": ["major", "minor", "patch"]
+  "work": {
+    "feature": "feature",
+    "bug": "bug",
+    "remediate": "remediate"
+  },
+  "release": {
+    "integration": "release:snapshot",
+    "production": "release:production"
+  },
+  "versions": [
+    "major",
+    "minor",
+    "patch"
+  ],
+  "label_colors": {
+    "feature": "ADD8E6",
+    "bug": "D73A4A",
+    "remediate": "FF8C00",
+    "release:snapshot": "8B4513",
+    "release:production": "228B22",
+    "version:patch": "808080",
+    "version:minor": "D2B48C",
+    "version:major": "FF00FF"
+  }
 }
