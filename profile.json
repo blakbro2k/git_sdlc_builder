@@ -19,12 +19,12 @@
     "feature": "ADD8E6",
     "bug": "D73A4A",
     "remediate": "FF8C00",
-    "release:snapshot": "8B4513",
-    "release:production": "228B22",
-    "version:patch": "808080",
-    "version:minor": "D2B48C",
-    "version:major": "FF00FF",
-    "frontend": "",
-    "backend": ""
+    "release:snapshot": "7E2A16",
+    "release:production": "0E8A16",
+    "version:patch": "C5DEF5",
+    "version:minor": "1D76DB",
+    "version:major": "33cdde",
+    "frontend": "081a71",
+    "backend": "cd794a"
   }
 }
