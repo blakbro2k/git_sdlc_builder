@@ -26,5 +26,31 @@
     "version:major": { "color": "33cdde", "description" : "Breaking or foundational version bump" },
     "frontend": { "color": "081a71", "description" : "Changes to the user interface" },
     "backend": { "color": "cd794a", "description" : "Changes to the backend of the product" }
+  },
+  "quality": {
+    "maven": {
+      "spotless": {
+        "enabled": true,
+        "version": "2.43.0",
+        "java": {
+          "enabled": true,
+          "style": "AOSP",
+          "version": "1.25.2"
+        },
+        "xml": {
+          "enabled": true,
+          "includes": ["pom.xml"]
+        },
+        "licenseHeader": {
+          "enabled": true,
+          "template": "resources/license-header.txt"
+        }
+      }
+    }
+  },
+  "licenseHeader": {
+  "enabled": true,
+  "template": "resources/license-header.txt",
+  "year": 2026
   }
 }
