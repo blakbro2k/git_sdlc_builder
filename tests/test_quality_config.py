@@ -70,7 +70,6 @@ class QualityConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sdlc.validate_quality(profile)
 
-
     def test_invalid_java_version(self):
         profile = copy.deepcopy(self.profile)
         profile["quality"]["maven"]["spotless"]["java"]["version"] = "latest"
