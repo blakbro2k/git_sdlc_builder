@@ -75,8 +75,83 @@ def read_profile(path):
             if not isinstance(desc, str) or len(desc) > 100:
                 raise ValueError(f"Description for {name} must be a string of at most 100 characters.")
         palette[name] = fields
+
+    validate_quality(profile)
     return profile
 
+def validate_quality(profile):
+    quality = profile.get("quality")
+    if quality is None:
+        return
+
+    if not isinstance(quality, dict):
+        raise ValueError("quality must be an object.")
+
+    maven = quality.get("maven", {})
+    if not isinstance(maven, dict):
+        raise ValueError("quality.maven must be an object.")
+
+    spotless = maven.get("spotless", {})
+    if not isinstance(spotless, dict):
+        raise ValueError("quality.maven.spotless must be an object.")
+
+    if "enabled" in spotless and not isinstance(spotless["enabled"], bool):
+        raise ValueError("quality.maven.spotless.enabled must be a boolean.")
+
+    if "version" in spotless:
+        version = spotless["version"]
+        if not isinstance(version, str) or not re.fullmatch(
+            r"\d+\.\d+\.\d+", version
+        ):
+            raise ValueError(
+                "quality.maven.spotless.version must be a version such as 2.43.0."
+            )
+
+    for section in ("java", "xml", "licenseHeader"):
+        settings = spotless.get(section, {})
+        if not isinstance(settings, dict):
+            raise ValueError(f"quality.maven.spotless.{section} must be an object.")
+
+        if "enabled" in settings and not isinstance(settings["enabled"], bool):
+            raise ValueError(
+                f"quality.maven.spotless.{section}.enabled must be a boolean."
+            )
+
+
+    java = spotless.get("java", {})
+
+    if java.get("enabled", False):
+        version = java.get("version")
+        style = java.get("style")
+
+        if not isinstance(version, str) or not re.fullmatch(
+            r"\d+\.\d+\.\d+", version
+        ):
+            raise ValueError(
+                "quality.maven.spotless.java.version must be a version such as 1.25.2."
+            )
+
+        if style not in ("AOSP", "GOOGLE"):
+            raise ValueError(
+                "quality.maven.spotless.java.style must be AOSP or GOOGLE."
+            )
+
+    xml = spotless.get("xml", {})
+
+    if xml.get("enabled", False):
+        includes = xml.get("includes")
+
+        if (
+            not isinstance(includes, list)
+            or not includes
+            or not all(
+                isinstance(pattern, str) and pattern.strip()
+                for pattern in includes
+            )
+        ):
+            raise ValueError(
+                "quality.maven.spotless.xml.includes must be a non-empty list of patterns."
+            )
 
 def label_plan(existing, profile):
     current = {key.casefold(): item for key, item in existing.items()}
