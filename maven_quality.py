@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import xml.etree.ElementTree as ET
-
+import warnings
 
 SPOTLESS_GROUP = "com.diffplug.spotless"
 SPOTLESS_ARTIFACT = "spotless-maven-plugin"
@@ -30,7 +30,7 @@ def has_spotless_plugin(pom_path: Path) -> bool:
 
     return False
 
-def build_spotless_plugin(spotless_config):
+def build_spotless_plugin(spotless_config, project_root=None):
     """Build a Spotless Maven plugin from profile configuration."""
     version = spotless_config["version"]
     plugin = ET.Element("plugin")
@@ -78,5 +78,63 @@ def build_spotless_plugin(spotless_config):
 
         ET.SubElement(formatter, "version").text = java_config["version"]
         ET.SubElement(formatter, "style").text = java_config["style"]
+
+        license_config = spotless_config.get("licenseHeader", {})
+
+        license_config = spotless_config.get("licenseHeader", {})
+
+        if license_config.get("enabled", False) and project_root is None:
+            warnings.warn(
+                "Skipping Spotless license header: project root not provided",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        if license_config.get("enabled", False) and project_root is not None:
+            template_name = license_config.get("template", "")
+
+            try:
+                project_path = Path(project_root).resolve()
+                relative_path = Path(template_name)
+
+                if relative_path.is_absolute():
+                    valid_template = False
+                else:
+                    template_path = (project_path / relative_path).resolve()
+
+                    valid_template = (
+                        template_path.is_relative_to(project_path)
+                        and template_path.is_file()
+                        and bool(
+                            template_path.read_text(encoding="utf-8").strip()
+                        )
+                    )
+
+            except (OSError, UnicodeError, ValueError, TypeError):
+                valid_template = False
+
+            if valid_template:
+                license_header = ET.SubElement(java, "licenseHeader")
+                ET.SubElement(license_header, "file").text = template_name
+            else:
+                warnings.warn(
+                    f"Skipping Spotless license header: "
+                    f"missing, empty, unreadable, or unsafe template "
+                    f"'{template_name}'",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+            if valid_template:
+                license_header = ET.SubElement(java, "licenseHeader")
+                ET.SubElement(license_header, "file").text = template_name
+            else:
+                warnings.warn(
+                    f"Skipping Spotless license header: "
+                    f"missing, empty, unreadable, or unsafe template "
+                    f"'{template_name}'",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
     return plugin
