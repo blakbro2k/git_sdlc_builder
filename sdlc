@@ -224,6 +224,12 @@ def init(args):
                            ("policy.py", ".github/scripts/sdlc_policy.py"),
                            ("pull_request_template.md", ".github/pull_request_template.md")]:
         files[target] = (HERE / "templates" / source).read_text()
+    files[".github/workflows/sdlc-draft-release.yml"] = (
+        (HERE / "templates/draft-release.yml").read_text()
+        .replace("__PRODUCTION__", json.dumps(main))
+        .replace("__INTEGRATION__", "'" + dev.replace("'", "''") + "'")
+    )
+    files[".github/scripts/draft_release.py"] = (HERE / "templates/draft_release.py").read_text()
     files["CONTRIBUTING.md"] = (f"Start a feature, bug or remediation branch from {dev}. Open a PR into {dev} "
                                 f"with the matching work label, {profile['release']['integration']} and one version label. "
                                 f"Release through a PR from {dev} into {main} with {profile['release']['production']}.\n")

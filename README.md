@@ -115,3 +115,19 @@ Omitting description preserves existing wording. An empty description explicitly
 clears it. A description-only object preserves the existing color (new labels
 default to neutral grey). Preview with `sdlc labels --dry-run` and apply with
 `sdlc labels`; bootstrap uses the same logic.
+
+### Production draft releases
+
+`sdlc init` installs a release workflow alongside the PR policy. Merge the
+configured integration branch into the production branch with the production
+release label and exactly one `version:major`, `version:minor` or
+`version:patch` label. After merge the workflow tags that exact commit and
+creates a GitHub draft with generated release notes. Publish the reviewed
+draft from GitHub Releases.
+
+Versioning starts from the highest reachable stable `vX.Y.Z` tag, or
+`v0.0.0` if none exists. Snapshot tags are ignored. A rerun reuses the tag
+on the merge commit and preserves an existing release and its edits. Allow
+Actions to create release tags and draft releases in the target repository.
+Required tests and build checks belong in the production branch's merge
+rules. Packaging, Docker publication and deployment remain project-specific.
