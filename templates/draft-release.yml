@@ -1,0 +1,23 @@
+name: Stage production release
+on:
+  pull_request:
+    types: [closed]
+    branches: [__PRODUCTION__]
+
+permissions: {}
+
+jobs:
+  draft:
+    if: github.event.pull_request.merged && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == __INTEGRATION__
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+      - name: Tag merged commit and stage release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/draft_release.py
